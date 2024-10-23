@@ -9,13 +9,17 @@ import android.widget.TextView
 import androidx.core.view.MenuProvider
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.cs407.lab5_milestone.data.NoteDatabase
-import com.cs407.lab5_milestone.data.NoteSummary
+import com.cs407.lab5_milestone.NoteSummary
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.floatingactionbutton.FloatingActionButton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Calendar
 
 class NoteListFragment(
@@ -38,7 +42,7 @@ class NoteListFragment(
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        noteDB = NoteDatabase.getDatabase(requireContext())
+        // Get shared preferences using R.string.userPasswdKV as the name
         userPasswdKV = requireContext().getSharedPreferences(
             getString(R.string.userPasswdKV), Context.MODE_PRIVATE)
         userViewModel = if (injectedUserViewModel != null) {
@@ -108,7 +112,7 @@ class NoteListFragment(
         )
 
         adapter = NoteAdapter(
-            noteList = sampleNotes, // Pass the hard-coded list to the adapter
+            notes = sampleNotes,  // Ensure this matches the constructor parameter name
             onClick = { noteId ->
                 val action = NoteListFragmentDirections.actionNoteListFragmentToNoteContentFragment(noteId)
                 findNavController().navigate(action)
@@ -126,6 +130,15 @@ class NoteListFragment(
         fab.setOnClickListener {
             val action = NoteListFragmentDirections.actionNoteListFragmentToNoteContentFragment(0)
             findNavController().navigate(action)
+        }
+
+        // Fetch notes for the current user
+        lifecycleScope.launch {
+            val userId = userViewModel.userState.value?.id ?: return@launch
+            val notes = withContext(Dispatchers.IO) {
+                noteDB.noteDao().getAllNotes(userId) // Use getAllNotes to fetch a list
+            }
+            adapter.submitList(notes)
         }
     }
 

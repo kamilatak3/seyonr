@@ -13,4 +13,6 @@
     <string name="logout">Log Out</string>
     <string name="delete_account">Delete Account</string>
     <string name="greeting_text">Welcome %1$s!</string>
+    <string name="empty_field">Field cannot be empty</string>
+
 </resources>

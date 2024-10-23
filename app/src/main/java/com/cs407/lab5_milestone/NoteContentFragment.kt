@@ -14,11 +14,13 @@ import androidx.lifecycle.*
 import androidx.navigation.fragment.findNavController
 import com.cs407.lab5_milestone.data.Note
 import com.cs407.lab5_milestone.data.NoteDatabase
+import com.cs407.lab5_milestone.data.UserNote
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Calendar
+import android.util.Log
 
 class NoteContentFragment(
     private val injectedUserViewModel: UserViewModel? = null
@@ -37,28 +39,28 @@ class NoteContentFragment(
         super.onCreate(savedInstanceState)
         noteId = arguments?.getInt("noteId") ?: 0
         noteDB = NoteDatabase.getDatabase(requireContext())
-        userViewModel = if (injectedUserViewModel != null) {
-            injectedUserViewModel
-        } else {
-            // Use ViewModelProvider to init UserViewModel
-            ViewModelProvider(requireActivity()).get(UserViewModel::class.java)
-        }
-        userId = userViewModel.userState.value.id
+        userViewModel = ViewModelProvider(requireActivity()).get(UserViewModel::class.java)
+        userId = userViewModel.userState.value?.id ?: 0
     }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
-    ): View {
-        val view = inflater.inflate(R.layout.fragment_note_content, container, false)
-        titleEditText = view.findViewById(R.id.titleEditText)
-        contentEditText = view.findViewById(R.id.contentEditText)
-        saveButton = view.findViewById(R.id.saveButton)
-        return view
+    ): View? {
+        return inflater.inflate(R.layout.fragment_note_content, container, false)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        titleEditText = view.findViewById(R.id.titleEditText)
+        contentEditText = view.findViewById(R.id.contentEditText)
+        saveButton = view.findViewById(R.id.saveButton)
+
+        saveButton.setOnClickListener {
+            Log.d("NoteContentFragment", "Save button clicked")
+            saveContent()
+        }
 
         setupMenu()
         setupBackNavigation()
@@ -73,12 +75,12 @@ class NoteContentFragment(
                     }
 
                     // Check if the note content is stored in the database or in a file
-                    val content: String? = if (note.content != null) {
+                    val content: String? = if (note?.noteDetail != null) {
                         // Content is stored in the database
-                        note.content
+                        note.noteDetail
                     } else {
                         // Content is stored in a file
-                        val fileName = note.contentFileName
+                        val fileName = note?.notePath
                         if (fileName != null) {
                             // Read the file content
                             val file = File(requireContext().filesDir, fileName)
@@ -95,7 +97,7 @@ class NoteContentFragment(
                     // Switch back to the main thread to update the UI with the note content
                     withContext(Dispatchers.Main) {
                         // Set the retrieved note title to the title EditText field
-                        titleEditText.setText(note.title)
+                        titleEditText.setText(note?.noteTitle)
                         // Set the note content to the content EditText field
                         contentEditText.setText(content)
                     }
@@ -104,10 +106,6 @@ class NoteContentFragment(
                     e.printStackTrace()
                 }
             }
-        }
-
-        saveButton.setOnClickListener {
-            saveContent()
         }
     }
 
@@ -150,63 +148,51 @@ class NoteContentFragment(
     }
 
     private fun saveContent() {
-        // Retrieve the title and content from EditText fields
         val title = titleEditText.text.toString()
         val content = contentEditText.text.toString()
 
-        // Launch a coroutine to save the note in the background (non-UI thread)
+        if (title.isBlank() || content.isBlank()) {
+            Log.e("NoteContentFragment", "Title or content is empty")
+            return
+        }
+
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
                 try {
-                    // Check if the note content is too large for direct storage in the database
-                    val contentBytes = content.toByteArray()
-                    val contentTooLarge = contentBytes.size > 1024 // Assuming 1KB limit
-
-                    val contentFileName: String?
-                    val contentToStore: String?
-
-                    if (contentTooLarge) {
-                        // Save the content as a file
-                        contentFileName = "note_content_${System.currentTimeMillis()}.txt"
-                        val file = File(requireContext().filesDir, contentFileName)
-                        file.writeText(content)
-                        contentToStore = null
-                    } else {
-                        // Store the note content directly in the database
-                        contentFileName = null
-                        contentToStore = content
-                    }
-
-                    // Implement logic to create an abstract from the content
-                    val noteAbstract = splitAbstractDetail(content)
-
-                    // Create the Note object
+                    Log.d("NoteContentFragment", "Saving note...")
+                    val noteAbstract = content.take(20)
                     val note = Note(
-                        noteId = if (noteId != 0) noteId else 0, // Use existing noteId or 0 for new note
+                        noteId = if (noteId != 0) noteId else 0,
                         userId = userId,
-                        title = title,
-                        content = contentToStore,
-                        contentFileName = contentFileName,
-                        lastEdited = Calendar.getInstance().time,
-                        noteAbstract = noteAbstract
+                        noteTitle = title,
+                        noteAbstract = noteAbstract,
+                        noteDetail = content,
+                        notePath = null,
+                        lastEdited = Calendar.getInstance().time
                     )
 
-                    // Insert or update the note in the Room database using the DAO method
-                    if (noteId == 0) {
-                        // New note, insert
-                        noteId = noteDB.noteDao().insertNote(note).toInt()
+                    val newNoteId = noteDB.noteDao().upsertNote(note).toInt()
+
+                    // Check if the user exists
+                    val user = noteDB.userDao().getById(userId)
+                    if (user != null) {
+                        if (noteId == 0) {
+                            val userNote = UserNote(
+                                userId = userId,
+                                noteId = newNoteId
+                            )
+                            noteDB.userNoteDao().insertUserNote(userNote)
+                        }
                     } else {
-                        // Existing note, update
-                        noteDB.noteDao().updateNote(note)
+                        Log.e("NoteContentFragment", "User does not exist")
                     }
 
-                    // Switch back to the main thread to navigate the UI after saving
                     withContext(Dispatchers.Main) {
-                        // Navigate back to the previous screen (e.g., after saving the note)
+                        Log.d("NoteContentFragment", "Note saved successfully")
                         findNavController().popBackStack()
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.e("NoteContentFragment", "Error saving note", e)
                 }
             }
         }

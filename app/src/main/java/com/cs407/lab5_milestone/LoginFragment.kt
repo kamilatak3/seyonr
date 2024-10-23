@@ -3,6 +3,7 @@ package com.cs407.lab5_milestone
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.util.Log
 import android.view.*
 import android.widget.Button
 import android.widget.EditText
@@ -13,6 +14,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.cs407.lab5_milestone.data.NoteDatabase
+import com.cs407.lab5_milestone.data.User
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -27,10 +29,17 @@ class LoginFragment(
     private lateinit var loginButton: Button
     private lateinit var errorTextView: TextView
 
+    private lateinit var noteDB: NoteDatabase
+
     private lateinit var userViewModel: UserViewModel
 
     private lateinit var userPasswdKV: SharedPreferences
-    // private lateinit var noteDB: NoteDatabase // Not used in this milestone
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Initialize noteDB here
+        noteDB = NoteDatabase.getDatabase(requireContext())
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -43,16 +52,12 @@ class LoginFragment(
         loginButton = view.findViewById(R.id.loginButton)
         errorTextView = view.findViewById(R.id.errorTextView)
 
-        userViewModel = if (injectedUserViewModel != null) {
-            injectedUserViewModel
-        } else {
-            // Use ViewModelProvider to init UserViewModel
-            ViewModelProvider(requireActivity()).get(UserViewModel::class.java)
-        }
+        userViewModel = injectedUserViewModel ?: ViewModelProvider(requireActivity()).get(UserViewModel::class.java)
 
         // Get shared preferences using R.string.userPasswdKV as the name
         userPasswdKV = requireContext().getSharedPreferences(
-            getString(R.string.userPasswdKV), Context.MODE_PRIVATE)
+            getString(R.string.userPasswdKV), Context.MODE_PRIVATE
+        )
 
         return view
     }
@@ -75,7 +80,7 @@ class LoginFragment(
 
             if (username.isEmpty() || password.isEmpty()) {
                 // Show an error message if either username or password is empty
-                errorTextView.text = "Username and password cannot be empty."
+                errorTextView.text = getString(R.string.empty_field)
                 errorTextView.visibility = View.VISIBLE
             } else {
                 // Attempt to login or sign up in a coroutine
@@ -104,27 +109,22 @@ class LoginFragment(
         name: String,
         passwdPlain: String
     ): Boolean {
-        // Hash the plain password using a secure hashing function
         val hashedPassword = hash(passwdPlain)
 
-        // Check if the user exists in SharedPreferences (using the username as the key)
         if (userPasswdKV.contains(name)) {
-            // Retrieve the stored password from SharedPreferences
             val storedPassword = userPasswdKV.getString(name, null)
-            // Compare the hashed password with the stored one and return false if they don't match
-            if (storedPassword != null && storedPassword == hashedPassword) {
-                return true
-            } else {
-                return false
-            }
+            return storedPassword != null && storedPassword == hashedPassword
         } else {
-            // If the user doesn't exist in SharedPreferences, create a new user
-            // Store the hashed password in SharedPreferences for future logins
             val editor = userPasswdKV.edit()
             editor.putString(name, hashedPassword)
             editor.apply()
 
-            // Return true as the user was newly created
+            // Insert user into the database
+            withContext(Dispatchers.IO) {
+                val user = User(userName = name)
+                noteDB.userDao().insertUser(user)
+            }
+
             return true
         }
     }
@@ -132,5 +132,32 @@ class LoginFragment(
     private fun hash(input: String): String {
         return MessageDigest.getInstance("SHA-256").digest(input.toByteArray())
             .fold("") { str, it -> str + "%02x".format(it) }
+    }
+
+    // Example of logging user creation
+    private fun logUserCreation(name: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val user = User(userName = name)
+            val userId = noteDB.userDao().insertUser(user)
+            Log.d("LoginFragment", "User created with ID: $userId")
+        }
+    }
+
+    private fun createUserIfNotExists(userName: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val existingUser = noteDB.userDao().getByName(userName)
+            if (existingUser == null) {
+                val newUser = User(userName = userName)
+                val userId = noteDB.userDao().insertUser(newUser)
+                Log.d("LoginFragment", "User created with ID: $userId")
+                withContext(Dispatchers.Main) {
+                    userViewModel.setUser(UserState(id = userId.toInt(), name = userName))
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    userViewModel.setUser(UserState(id = existingUser.userId, name = userName))
+                }
+            }
+        }
     }
 }

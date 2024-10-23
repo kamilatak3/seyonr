@@ -13,8 +13,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.cs407.lab5_milestone.data.Note
 import com.cs407.lab5_milestone.data.NoteDatabase
-import com.cs407.lab5_milestone.NoteSummary
+import com.cs407.lab5_milestone.data.UserNote
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import kotlinx.coroutines.Dispatchers
@@ -35,9 +36,6 @@ class NoteListFragment(
     private lateinit var noteDB: NoteDatabase
     private lateinit var userPasswdKV: SharedPreferences
 
-    private var deleteIt: Boolean = false
-    private lateinit var noteToDelete: NoteSummary
-
     private lateinit var adapter: NoteAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,13 +45,7 @@ class NoteListFragment(
         userPasswdKV = requireContext().getSharedPreferences(
             getString(R.string.userPasswdKV), Context.MODE_PRIVATE
         )
-        userViewModel = if (injectedUserViewModel != null) {
-            injectedUserViewModel
-        } else {
-            ViewModelProvider(requireActivity()).get(UserViewModel::class.java)
-        }
-
-        // Since we are hard-coding notes in Milestone 1, we can omit any database operations here
+        userViewModel = injectedUserViewModel ?: ViewModelProvider(requireActivity()).get(UserViewModel::class.java)
     }
 
     override fun onCreateView(
@@ -95,33 +87,14 @@ class NoteListFragment(
         val userState = userViewModel.userState.value ?: UserState()
         greetingTextView.text = getString(R.string.greeting_text, userState.name)
 
-        // Create a hard-coded list of notes for Milestone 1
-        val sampleNotes = listOf(
-            NoteSummary(
-                noteId = 1,
-                noteTitle = "Sample Note 1",
-                noteAbstract = "This is the first sample note.",
-                lastEdited = Calendar.getInstance().time
-            ),
-            NoteSummary(
-                noteId = 2,
-                noteTitle = "Sample Note 2",
-                noteAbstract = "This is the second sample note.",
-                lastEdited = Calendar.getInstance().time
-            )
-            // Add more notes as needed
-        )
-
+        // Initialize the adapter with click and long-click listeners
         adapter = NoteAdapter(
-            notes = sampleNotes,  // Ensure this matches the constructor parameter name
-            onClick = { noteId ->
-                val action = NoteListFragmentDirections.actionNoteListFragmentToNoteContentFragment(noteId)
+            onClick = { note ->
+                val action = NoteListFragmentDirections.actionNoteListFragmentToNoteContentFragment(note.noteId)
                 findNavController().navigate(action)
             },
-            onLongClick = { noteSummary ->
-                deleteIt = true
-                noteToDelete = noteSummary
-                showDeleteBottomSheet()
+            onLongClick = { note ->
+                showDeleteBottomSheet(note)
             }
         )
 
@@ -129,48 +102,66 @@ class NoteListFragment(
         noteRecyclerView.adapter = adapter
 
         fab.setOnClickListener {
+            // Navigate to NoteContentFragment with noteId = 0 (new note)
             val action = NoteListFragmentDirections.actionNoteListFragmentToNoteContentFragment(0)
             findNavController().navigate(action)
         }
 
         // Fetch notes for the current user
+        fetchNotes()
+    }
+
+    private fun fetchNotes() {
+        val userId = userViewModel.userState.value?.id ?: return
+
         lifecycleScope.launch {
-            val userId = userViewModel.userState.value?.id ?: return@launch
             val notes = withContext(Dispatchers.IO) {
-                noteDB.noteDao().getAllNotes(userId) // Use getAllNotes to fetch a list
+                noteDB.noteDao().getAllNotes(userId)
             }
             adapter.submitList(notes)
         }
     }
 
-    private fun showDeleteBottomSheet() {
-        if (deleteIt) {
-            val bottomSheetDialog = BottomSheetDialog(requireContext())
-            val bottomSheetView = layoutInflater.inflate(R.layout.bottom_sheet_delete, null)
-            bottomSheetDialog.setContentView(bottomSheetView)
+    private fun showDeleteBottomSheet(note: Note) {
+        val bottomSheetDialog = BottomSheetDialog(requireContext())
+        val bottomSheetView = layoutInflater.inflate(R.layout.bottom_sheet_delete, null)
+        bottomSheetDialog.setContentView(bottomSheetView)
 
-            val deleteButton = bottomSheetView.findViewById<Button>(R.id.deleteButton)
-            val cancelButton = bottomSheetView.findViewById<Button>(R.id.cancelButton)
-            val deletePrompt = bottomSheetView.findViewById<TextView>(R.id.deletePrompt)
+        val deleteButton = bottomSheetView.findViewById<Button>(R.id.deleteButton)
+        val cancelButton = bottomSheetView.findViewById<Button>(R.id.cancelButton)
+        val deletePrompt = bottomSheetView.findViewById<TextView>(R.id.deletePrompt)
 
-            deletePrompt.text = "Delete Note: ${noteToDelete.noteTitle}"
 
-            deleteButton.setOnClickListener {
-                // Since note deletion is not required for Milestone 1, we can simply dismiss the dialog
-                deleteIt = false
-                bottomSheetDialog.dismiss()
+        deleteButton.setOnClickListener {
+            // Perform deletion
+            deleteNote(note)
+            bottomSheetDialog.dismiss()
+        }
+
+        cancelButton.setOnClickListener {
+            bottomSheetDialog.dismiss()
+        }
+
+        bottomSheetDialog.show()
+    }
+
+    private fun deleteNote(note: Note) {
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                try {
+                    // Delete from UserNote table
+                    val userNote = UserNote(userId = note.userId, noteId = note.noteId)
+                    noteDB.userNoteDao().deleteUserNote(userNote)
+
+                    // Delete the note itself
+                    noteDB.noteDao().deleteNoteById(note.noteId)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
 
-            cancelButton.setOnClickListener {
-                deleteIt = false
-                bottomSheetDialog.dismiss()
-            }
-
-            bottomSheetDialog.setOnDismissListener {
-                deleteIt = false
-            }
-
-            bottomSheetDialog.show()
+            // Refresh the notes list after deletion
+            fetchNotes()
         }
     }
 
@@ -182,6 +173,14 @@ class NoteListFragment(
         val editor = userPasswdKV.edit()
         editor.remove(userState.name)
         editor.apply()
+
+        // Delete user from the database
+        lifecycleScope.launch(Dispatchers.IO) {
+            val user = noteDB.userDao().getById(userState.id)
+            if (user != null) {
+                noteDB.userDao().deleteUser(user)
+            }
+        }
 
         // Reset the user state in the ViewModel to represent a logged-out state
         userViewModel.setUser(UserState())

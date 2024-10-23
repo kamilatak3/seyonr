@@ -3,7 +3,6 @@ package com.cs407.lab5_milestone
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
-import android.util.Log
 import android.view.*
 import android.widget.Button
 import android.widget.EditText
@@ -54,7 +53,7 @@ class LoginFragment(
 
         userViewModel = injectedUserViewModel ?: ViewModelProvider(requireActivity()).get(UserViewModel::class.java)
 
-        // Get shared preferences using R.string.userPasswdKV as the name
+        // Get shared preferences using R.string.user_passwd_kv as the name
         userPasswdKV = requireContext().getSharedPreferences(
             getString(R.string.userPasswdKV), Context.MODE_PRIVATE
         )
@@ -117,6 +116,7 @@ class LoginFragment(
             val storedPassword = userPasswdKV.getString(name, null)
             return storedPassword != null && storedPassword == hashedPassword
         } else {
+            // Insert into SharedPreferences
             val editor = userPasswdKV.edit()
             editor.putString(name, hashedPassword)
             editor.apply()
@@ -141,7 +141,7 @@ class LoginFragment(
         lifecycleScope.launch(Dispatchers.IO) {
             val user = User(userName = name)
             val userId = noteDB.userDao().insertUser(user)
-            Log.d("LoginFragment", "User created with ID: $userId")
+            // Log or handle the created user
         }
     }
 
@@ -151,7 +151,6 @@ class LoginFragment(
             if (existingUser == null) {
                 val newUser = User(userName = userName)
                 val userId = noteDB.userDao().insertUser(newUser)
-                Log.d("LoginFragment", "User created with ID: $userId")
                 withContext(Dispatchers.Main) {
                     userViewModel.setUser(UserState(id = userId.toInt(), name = userName))
                 }

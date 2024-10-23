@@ -43,8 +43,8 @@ data class Note(
     tableName = "UserNote",
     primaryKeys = ["userId", "noteId"],
     foreignKeys = [
-        ForeignKey(entity = User::class, parentColumns = ["userId"], childColumns = ["userId"]),
-        ForeignKey(entity = Note::class, parentColumns = ["noteId"], childColumns = ["noteId"])
+        ForeignKey(entity = User::class, parentColumns = ["userId"], childColumns = ["userId"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(entity = Note::class, parentColumns = ["noteId"], childColumns = ["noteId"], onDelete = ForeignKey.CASCADE)
     ]
 )
 data class UserNote(
@@ -107,7 +107,7 @@ interface UserNoteDao {
 }
 
 // 7. Set up the NoteDatabase class
-@Database(entities = [User::class, Note::class, UserNote::class], version = 2)
+@Database(entities = [User::class, Note::class, UserNote::class], version = 3)
 @TypeConverters(Converters::class)
 abstract class NoteDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
@@ -125,7 +125,7 @@ abstract class NoteDatabase : RoomDatabase() {
                     NoteDatabase::class.java,
                     "note_database"
                 )
-                    .fallbackToDestructiveMigration() // Use this to drop and recreate the database
+                    .fallbackToDestructiveMigration() // Automatically handles schema changes by recreating the database
                     .build()
                 INSTANCE = instance
                 instance

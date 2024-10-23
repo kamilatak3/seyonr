@@ -41,6 +41,11 @@ class NoteContentFragment(
         noteDB = NoteDatabase.getDatabase(requireContext())
         userViewModel = ViewModelProvider(requireActivity()).get(UserViewModel::class.java)
         userId = userViewModel.userState.value?.id ?: 0
+
+        if (userId == 0) {
+            Log.e("NoteContentFragment", "User ID is not set")
+            // Handle the case where userId is not set, possibly by redirecting to login
+        }
     }
 
     override fun onCreateView(

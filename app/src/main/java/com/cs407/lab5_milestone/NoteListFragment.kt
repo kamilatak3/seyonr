@@ -42,13 +42,14 @@ class NoteListFragment(
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Get shared preferences using R.string.userPasswdKV as the name
+        noteDB = NoteDatabase.getDatabase(requireContext()) // Initialize noteDB here
+
         userPasswdKV = requireContext().getSharedPreferences(
-            getString(R.string.userPasswdKV), Context.MODE_PRIVATE)
+            getString(R.string.userPasswdKV), Context.MODE_PRIVATE
+        )
         userViewModel = if (injectedUserViewModel != null) {
             injectedUserViewModel
         } else {
-            // Use ViewModelProvider to init UserViewModel
             ViewModelProvider(requireActivity()).get(UserViewModel::class.java)
         }
 

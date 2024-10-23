@@ -74,29 +74,31 @@ class LoginFragment(
 
         // Set the login button click action
         loginButton.setOnClickListener {
-            // Get the entered username and password from EditText fields
             val username = usernameEditText.text.toString()
             val password = passwordEditText.text.toString()
 
             if (username.isEmpty() || password.isEmpty()) {
-                // Show an error message if either username or password is empty
                 errorTextView.text = getString(R.string.empty_field)
                 errorTextView.visibility = View.VISIBLE
             } else {
-                // Attempt to login or sign up in a coroutine
                 lifecycleScope.launch {
                     val loginSuccess = withContext(Dispatchers.IO) {
                         getUserPasswd(username, password)
                     }
 
                     if (loginSuccess) {
-                        // Set the logged-in user in the ViewModel (store user info)
-                        userViewModel.setUser(UserState(name = username))
+                        val user = withContext(Dispatchers.IO) {
+                            noteDB.userDao().getByName(username)
+                        }
 
-                        // Navigate to another fragment after successful login
-                        findNavController().navigate(R.id.action_loginFragment_to_noteListFragment)
+                        if (user != null) {
+                            userViewModel.setUser(UserState(id = user.userId, name = username))
+                            findNavController().navigate(R.id.action_loginFragment_to_noteListFragment)
+                        } else {
+                            errorTextView.text = getString(R.string.fail_login)
+                            errorTextView.visibility = View.VISIBLE
+                        }
                     } else {
-                        // Show an error message if login failed
                         errorTextView.text = getString(R.string.fail_login)
                         errorTextView.visibility = View.VISIBLE
                     }

@@ -13,7 +13,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.cs407.lab5_milestone.data.NoteDatabase
-import com.cs407.lab5_milestone.data.User
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -31,7 +30,7 @@ class LoginFragment(
     private lateinit var userViewModel: UserViewModel
 
     private lateinit var userPasswdKV: SharedPreferences
-    private lateinit var noteDB: NoteDatabase
+    // private lateinit var noteDB: NoteDatabase // Not used in this milestone
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -47,11 +46,13 @@ class LoginFragment(
         userViewModel = if (injectedUserViewModel != null) {
             injectedUserViewModel
         } else {
-            // TODO - Use ViewModelProvider to init UserViewModel
-            UserViewModel()
+            // Use ViewModelProvider to init UserViewModel
+            ViewModelProvider(requireActivity()).get(UserViewModel::class.java)
         }
 
-        // TODO - Get shared preferences from using R.string.userPasswdKV as the name
+        // Get shared preferences using R.string.userPasswdKV as the name
+        userPasswdKV = requireContext().getSharedPreferences(
+            getString(R.string.userPasswdKV), Context.MODE_PRIVATE)
 
         return view
     }
@@ -68,17 +69,34 @@ class LoginFragment(
 
         // Set the login button click action
         loginButton.setOnClickListener {
-            // TODO: Get the entered username and password from EditText fields
+            // Get the entered username and password from EditText fields
+            val username = usernameEditText.text.toString()
+            val password = passwordEditText.text.toString()
 
-            // TODO: Set the logged-in user in the ViewModel (store user info) (placeholder)
-            userViewModel.setUser(UserState(0, "name", "passwd")) // You will implement this in UserViewModel
+            if (username.isEmpty() || password.isEmpty()) {
+                // Show an error message if either username or password is empty
+                errorTextView.text = "Username and password cannot be empty."
+                errorTextView.visibility = View.VISIBLE
+            } else {
+                // Attempt to login or sign up in a coroutine
+                lifecycleScope.launch {
+                    val loginSuccess = withContext(Dispatchers.IO) {
+                        getUserPasswd(username, password)
+                    }
 
-            // TODO: Navigate to another fragment after successful login
-            findNavController().navigate(R.id.action_loginFragment_to_noteListFragment) // Example navigation action
+                    if (loginSuccess) {
+                        // Set the logged-in user in the ViewModel (store user info)
+                        userViewModel.setUser(UserState(name = username))
 
-            // TODO: Show an error message if either username or password is empty
-            errorTextView.visibility = View.VISIBLE
-
+                        // Navigate to another fragment after successful login
+                        findNavController().navigate(R.id.action_loginFragment_to_noteListFragment)
+                    } else {
+                        // Show an error message if login failed
+                        errorTextView.text = getString(R.string.fail_login)
+                        errorTextView.visibility = View.VISIBLE
+                    }
+                }
+            }
         }
     }
 
@@ -86,24 +104,29 @@ class LoginFragment(
         name: String,
         passwdPlain: String
     ): Boolean {
-        // TODO: Hash the plain password using a secure hashing function
+        // Hash the plain password using a secure hashing function
+        val hashedPassword = hash(passwdPlain)
 
-        // TODO: Check if the user exists in SharedPreferences (using the username as the key)
+        // Check if the user exists in SharedPreferences (using the username as the key)
+        if (userPasswdKV.contains(name)) {
+            // Retrieve the stored password from SharedPreferences
+            val storedPassword = userPasswdKV.getString(name, null)
+            // Compare the hashed password with the stored one and return false if they don't match
+            if (storedPassword != null && storedPassword == hashedPassword) {
+                return true
+            } else {
+                return false
+            }
+        } else {
+            // If the user doesn't exist in SharedPreferences, create a new user
+            // Store the hashed password in SharedPreferences for future logins
+            val editor = userPasswdKV.edit()
+            editor.putString(name, hashedPassword)
+            editor.apply()
 
-
-        // TODO: Retrieve the stored password from SharedPreferences
-
-        // TODO: Compare the hashed password with the stored one and return false if they don't match
-
-        // TODO: If the user doesn't exist in SharedPreferences, create a new user
-
-        // TODO: Insert the new user into the Room database (implement this in your User DAO)
-
-        // TODO: Store the hashed password in SharedPreferences for future logins
-
-        // TODO: Return true if the user login is successful or the user was newly created
-
-        return true
+            // Return true as the user was newly created
+            return true
+        }
     }
 
     private fun hash(input: String): String {

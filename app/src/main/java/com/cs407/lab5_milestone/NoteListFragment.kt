@@ -3,31 +3,19 @@ package com.cs407.lab5_milestone
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
-import android.view.LayoutInflater
-import android.view.Menu
-import android.view.MenuInflater
-import android.view.MenuItem
-import android.view.View
-import android.view.ViewGroup
+import android.view.*
 import android.widget.Button
 import android.widget.TextView
 import androidx.core.view.MenuProvider
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
-import androidx.paging.Pager
-import androidx.paging.PagingConfig
-import androidx.paging.cachedIn
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.cs407.lab5_milestone.data.Note
 import com.cs407.lab5_milestone.data.NoteDatabase
 import com.cs407.lab5_milestone.data.NoteSummary
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.floatingactionbutton.FloatingActionButton
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import java.util.Calendar
 
 class NoteListFragment(
@@ -56,28 +44,11 @@ class NoteListFragment(
         userViewModel = if (injectedUserViewModel != null) {
             injectedUserViewModel
         } else {
-            // TODO - Use ViewModelProvider to init UserViewModel
-            UserViewModel()
+            // Use ViewModelProvider to init UserViewModel
+            ViewModelProvider(requireActivity()).get(UserViewModel::class.java)
         }
 
-        // Manually create 1000 notes for "large" user
-        val userState = userViewModel.userState.value
-        lifecycleScope.launch {
-            val countNote = noteDB.noteDao().userNoteCount(userState.id)
-            if (countNote == 0 && userState.name == "large") {
-                for (i in 1..1000) {
-                    noteDB.noteDao().upsertNote(
-                        Note(
-                            noteTitle = "Note $i",
-                            noteAbstract = "This is Note $i",
-                            noteDetail = "Welcome to Note $i",
-                            notePath = null,
-                            lastEdited = Calendar.getInstance().time
-                        ), userState.id
-                    )
-                }
-            }
-        }
+        // Since we are hard-coding notes in Milestone 1, we can omit any database operations here
     }
 
     override fun onCreateView(
@@ -103,7 +74,7 @@ class NoteListFragment(
             override fun onMenuItemSelected(menuItem: MenuItem): Boolean {
                 return when (menuItem.itemId) {
                     R.id.action_logout -> {
-                        userViewModel.setUser(UserState())
+                        userViewModel.setUser(UserState()) // Reset user state
                         findNavController().navigate(R.id.action_noteListFragment_to_loginFragment)
                         true
                     }
@@ -116,10 +87,28 @@ class NoteListFragment(
             }
         }, viewLifecycleOwner)
 
-        val userState = userViewModel.userState.value
+        val userState = userViewModel.userState.value ?: UserState()
         greetingTextView.text = getString(R.string.greeting_text, userState.name)
 
+        // Create a hard-coded list of notes for Milestone 1
+        val sampleNotes = listOf(
+            NoteSummary(
+                noteId = 1,
+                noteTitle = "Sample Note 1",
+                noteAbstract = "This is the first sample note.",
+                lastEdited = Calendar.getInstance().time
+            ),
+            NoteSummary(
+                noteId = 2,
+                noteTitle = "Sample Note 2",
+                noteAbstract = "This is the second sample note.",
+                lastEdited = Calendar.getInstance().time
+            )
+            // Add more notes as needed
+        )
+
         adapter = NoteAdapter(
+            noteList = sampleNotes, // Pass the hard-coded list to the adapter
             onClick = { noteId ->
                 val action = NoteListFragmentDirections.actionNoteListFragmentToNoteContentFragment(noteId)
                 findNavController().navigate(action)
@@ -134,29 +123,11 @@ class NoteListFragment(
         noteRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         noteRecyclerView.adapter = adapter
 
-        loadNotes()
-
         fab.setOnClickListener {
             val action = NoteListFragmentDirections.actionNoteListFragmentToNoteContentFragment(0)
             findNavController().navigate(action)
         }
     }
-
-    private fun loadNotes() {
-        // TODO: Retrieve the current user state from the ViewModel (to get the user ID)
-        val userState = userViewModel.userState.value
-
-        // TODO: Set up paging configuration with a specified page size and prefetch distance
-
-        // TODO: Implement a query to retrieve the paged list of notes associated with the user
-
-        // TODO: Launch a coroutine to collect the paginated flow and submit it to the RecyclerView adapter
-
-        // TODO: Cache the paging flow in the lifecycle scope and collect the paginated data
-
-        // TODO: Submit the paginated data to the adapter to display it in the RecyclerView
-    }
-
 
     private fun showDeleteBottomSheet() {
         if (deleteIt) {
@@ -171,18 +142,9 @@ class NoteListFragment(
             deletePrompt.text = "Delete Note: ${noteToDelete.noteTitle}"
 
             deleteButton.setOnClickListener {
-                // TODO: Launch a coroutine to perform the note deletion in the background
-
-                // TODO: Implement the logic to delete the note from the Room database using the DAO
-
-                // TODO: Reset any flags or variables that control the delete state
-                deleteIt = false // Example of resetting a flag after deletion
-
-                // TODO: Dismiss the bottom sheet dialog after the deletion is completed
+                // Since note deletion is not required for Milestone 1, we can simply dismiss the dialog
+                deleteIt = false
                 bottomSheetDialog.dismiss()
-
-                // TODO: Reload the list of notes to reflect the deleted note (e.g., refresh UI)
-                loadNotes() // Implement the function to refresh or reload the notes
             }
 
             cancelButton.setOnClickListener {
@@ -199,16 +161,18 @@ class NoteListFragment(
     }
 
     private fun deleteAccountAndLogout() {
-        // TODO: Retrieve the current user state from the ViewModel (contains user details)
+        // Retrieve the current user state from the ViewModel (contains user details)
+        val userState = userViewModel.userState.value ?: UserState()
 
-        // TODO: Launch a coroutine to perform account deletion in the background
+        // Remove the user's credentials from SharedPreferences
+        val editor = userPasswdKV.edit()
+        editor.remove(userState.name)
+        editor.apply()
 
-        // TODO: Implement the logic to delete the user's data from the Room database
+        // Reset the user state in the ViewModel to represent a logged-out state
+        userViewModel.setUser(UserState())
 
-        // TODO: Remove the user's credentials from SharedPreferences
-
-        // TODO: Reset the user state in the ViewModel to represent a logged-out state
-
-        // TODO: Navigate back to the login screen after the account is deleted and user is logged out
+        // Navigate back to the login screen after the account is deleted and user is logged out
+        findNavController().navigate(R.id.action_noteListFragment_to_loginFragment)
     }
 }

@@ -4,17 +4,16 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
-import androidx.paging.PagingDataAdapter
-import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.cs407.lab5_milestone.data.NoteSummary
 import java.text.SimpleDateFormat
 import java.util.*
 
 class NoteAdapter(
+    private val noteList: List<NoteSummary>,
     private val onClick: (Int) -> Unit,
     private val onLongClick: (NoteSummary) -> Unit
-) : PagingDataAdapter<NoteSummary, NoteAdapter.NoteViewHolder>(NOTE_COMPARATOR) {
+) : RecyclerView.Adapter<NoteAdapter.NoteViewHolder>() {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): NoteViewHolder {
         val itemView =
@@ -23,11 +22,11 @@ class NoteAdapter(
     }
 
     override fun onBindViewHolder(holder: NoteViewHolder, position: Int) {
-        val noteSummary = getItem(position)
-        if (noteSummary != null) {
-            holder.bind(noteSummary)
-        }
+        val noteSummary = noteList[position]
+        holder.bind(noteSummary)
     }
+
+    override fun getItemCount(): Int = noteList.size
 
     class NoteViewHolder(
         itemView: View,
@@ -51,16 +50,6 @@ class NoteAdapter(
                 onLongClick(noteSummary)
                 true
             }
-        }
-    }
-
-    companion object {
-        private val NOTE_COMPARATOR = object : DiffUtil.ItemCallback<NoteSummary>() {
-            override fun areItemsTheSame(oldItem: NoteSummary, newItem: NoteSummary): Boolean =
-                oldItem.noteId == newItem.noteId
-
-            override fun areContentsTheSame(oldItem: NoteSummary, newItem: NoteSummary): Boolean =
-                oldItem == newItem
         }
     }
 }

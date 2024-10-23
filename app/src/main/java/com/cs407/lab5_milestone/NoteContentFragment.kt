@@ -40,8 +40,8 @@ class NoteContentFragment(
         userViewModel = if (injectedUserViewModel != null) {
             injectedUserViewModel
         } else {
-            // TODO - Use ViewModelProvider to init UserViewModel
-            UserViewModel()
+            // Use ViewModelProvider to init UserViewModel
+            ViewModelProvider(requireActivity()).get(UserViewModel::class.java)
         }
         userId = userViewModel.userState.value.id
     }
@@ -64,21 +64,46 @@ class NoteContentFragment(
         setupBackNavigation()
 
         if (noteId != 0) {
-            // TODO: Launch a coroutine to fetch the note from the database in the background
+            // Launch a coroutine to fetch the note from the database in the background
+            lifecycleScope.launch {
+                try {
+                    // Retrieve the note from the Room database using the noteId
+                    val note = withContext(Dispatchers.IO) {
+                        noteDB.noteDao().getNoteById(noteId)
+                    }
 
-            // TODO: Retrieve the note from the Room database using the noteId
+                    // Check if the note content is stored in the database or in a file
+                    val content: String? = if (note.content != null) {
+                        // Content is stored in the database
+                        note.content
+                    } else {
+                        // Content is stored in a file
+                        val fileName = note.contentFileName
+                        if (fileName != null) {
+                            // Read the file content
+                            val file = File(requireContext().filesDir, fileName)
+                            if (file.exists()) {
+                                file.readText()
+                            } else {
+                                ""
+                            }
+                        } else {
+                            ""
+                        }
+                    }
 
-            // TODO: Check if the note content is stored in the database or in a file
-
-            // TODO: If the content is too large and stored as a file, read the file content
-
-            // TODO: Switch back to the main thread to update the UI with the note content
-
-            // TODO: Set the retrieved note title to the title EditText field
-
-            // TODO: Set the note content (either from the file or the database) to the content EditText field
-
-            // TODO: Optionally handle exceptions (e.g., file not found, database errors) if necessary
+                    // Switch back to the main thread to update the UI with the note content
+                    withContext(Dispatchers.Main) {
+                        // Set the retrieved note title to the title EditText field
+                        titleEditText.setText(note.title)
+                        // Set the note content to the content EditText field
+                        contentEditText.setText(content)
+                    }
+                } catch (e: Exception) {
+                    // Optionally handle exceptions (e.g., file not found, database errors) if necessary
+                    e.printStackTrace()
+                }
+            }
         }
 
         saveButton.setOnClickListener {
@@ -119,32 +144,72 @@ class NoteContentFragment(
 
     override fun onDestroyView() {
         super.onDestroyView()
-        (activity as AppCompatActivity).supportActionBar?.setDisplayHomeAsUpEnabled(false)
+        if (activity is AppCompatActivity) {
+            (activity as AppCompatActivity).supportActionBar?.setDisplayHomeAsUpEnabled(false)
+        }
     }
 
     private fun saveContent() {
-        // TODO: Retrieve the title and content from EditText fields
+        // Retrieve the title and content from EditText fields
+        val title = titleEditText.text.toString()
+        val content = contentEditText.text.toString()
 
-        // TODO: Launch a coroutine to save the note in the background (non-UI thread)
+        // Launch a coroutine to save the note in the background (non-UI thread)
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                try {
+                    // Check if the note content is too large for direct storage in the database
+                    val contentBytes = content.toByteArray()
+                    val contentTooLarge = contentBytes.size > 1024 // Assuming 1KB limit
 
-        // TODO: Check if the note content is too large for direct storage in the database
+                    val contentFileName: String?
+                    val contentToStore: String?
 
-        // TODO: Save the content as a file if it's too large for the database
+                    if (contentTooLarge) {
+                        // Save the content as a file
+                        contentFileName = "note_content_${System.currentTimeMillis()}.txt"
+                        val file = File(requireContext().filesDir, contentFileName)
+                        file.writeText(content)
+                        contentToStore = null
+                    } else {
+                        // Store the note content directly in the database
+                        contentFileName = null
+                        contentToStore = content
+                    }
 
-        // TODO: Store the note content directly in the database if it's small enough
+                    // Implement logic to create an abstract from the content
+                    val noteAbstract = splitAbstractDetail(content)
 
-        // TODO: Insert or update the note in the Room database using the DAO method
+                    // Create the Note object
+                    val note = Note(
+                        noteId = if (noteId != 0) noteId else 0, // Use existing noteId or 0 for new note
+                        userId = userId,
+                        title = title,
+                        content = contentToStore,
+                        contentFileName = contentFileName,
+                        lastEdited = Calendar.getInstance().time,
+                        noteAbstract = noteAbstract
+                    )
 
-        // TODO: Ensure that noteId is assigned (could be auto-generated in Room)
+                    // Insert or update the note in the Room database using the DAO method
+                    if (noteId == 0) {
+                        // New note, insert
+                        noteId = noteDB.noteDao().insertNote(note).toInt()
+                    } else {
+                        // Existing note, update
+                        noteDB.noteDao().updateNote(note)
+                    }
 
-        // TODO: Implement logic to create an abstract from the content
-
-        // TODO: Ensure that userId is passed correctly (it should be associated with the note)
-
-        // TODO: Switch back to the main thread to navigate the UI after saving
-
-        // TODO: Navigate back to the previous screen (e.g., after saving the note)
-        findNavController().popBackStack()
+                    // Switch back to the main thread to navigate the UI after saving
+                    withContext(Dispatchers.Main) {
+                        // Navigate back to the previous screen (e.g., after saving the note)
+                        findNavController().popBackStack()
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
     }
 
     private fun splitAbstractDetail(content: String?): String {
